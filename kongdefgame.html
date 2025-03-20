@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kongdef</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 20px;
+            color: white;
+            z-index: 2;
+        }
+        .high-score {
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            font-size: 16px;
+            color: yellow;
+            z-index: 2;
+        }
+        #video-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+        }
+        .mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 2;
+            display: none; /* Verborgen op desktop */
+        }
+        .mobile-controls button {
+            padding: 15px;
+            font-size: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Video-achtergrond (inclusief audio) -->
+    <video id="video-background" autoplay loop muted>
+        <source src="mp4/achtergrond.mp4" type="video/mp4">
+        Je browser ondersteunt geen video-element.
+    </video>
+
+    <!-- Audio-element -->
+    <audio id="background-audio" loop muted>
+        <source src="audio/audio.mp4" type="audio/mp4">
+        Je browser ondersteunt geen audio-element.
+    </audio>
+
+    <!-- Score en hoogste score -->
+    <div class="score">Score: <span id="score">0</span></div>
+    <div class="high-score">Hoogste score: <span id="high-score">0</span></div>
+
+    <!-- Mobiele controls -->
+    <div class="mobile-controls" id="mobile-controls">
+        <button id="up">⬆️</button>
+        <button id="left">⬅️</button>
+        <button id="right">➡️</button>
+    </div>
+
+    <!-- Canvas voor het spel -->
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        // Start de video expliciet zodra de pagina is geladen
+        document.addEventListener('DOMContentLoaded', function() {
+            const videoBackground = document.getElementById('video-background');
+            videoBackground.play().catch(error => {
+                console.error('Video afspelen mislukt:', error);
+            });
+        });
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const gorilla = {
+            x: 50,
+            y: canvas.height / 2,
+            width: 120, // Grotere gorilla
+            height: 120,
+            speed: 6,
+            gravity: 0.2,
+            lift: -4,
+            velocity: 0,
+            hasShield: false
+        };
+
+        const obstakels = [];
+        const powerUps = [];
+        let frame = 0;
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') || 0;
+        let invincible = false; // Tijdelijke onoverwinnelijkheid
+        let skipObstacles = 0; // Aantal obstakels dat overgeslagen moet worden
+
+        // Afbeeldingen laden
+        const gorillaImg = new Image();
+        gorillaImg.src = 'images/gorilla.png'; // Cartoon-gorilla
+
+        const trosBananenImg = new Image();
+        trosBananenImg.src = 'images/tros_bananen.png'; // Tros bananen
+
+        const kokosnootImg = new Image();
+        kokosnootImg.src = 'images/kokosnoot.png'; // Kokosnoot
+
+        const banaanImg = new Image();
+        banaanImg.src = 'images/banaan.png'; // Banaan
+
+        // Wacht tot alle afbeeldingen zijn geladen
+        let imagesLoaded = 0;
+        const totalImages = 4;
+
+        function imageLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded === totalImages) {
+                gameLoop(); // Start het spel pas als alle afbeeldingen zijn geladen
+            }
+        }
+
+        gorillaImg.onload = imageLoaded;
+        trosBananenImg.onload = imageLoaded;
+        kokosnootImg.onload = imageLoaded;
+        banaanImg.onload = imageLoaded;
+
+        // Pijltoetsen besturing
+        const keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false
+        };
+
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+                startAudio(); // Start de audio bij interactie
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+            }
+        });
+
+        // Mobiele controls
+        const mobileControls = document.getElementById('mobile-controls');
+        const upButton = document.getElementById('up');
+        const leftButton = document.getElementById('left');
+        const rightButton = document.getElementById('right');
+
+        // Toon mobiele controls op mobiele apparaten
+        if (/Mobi|Android/i.test(navigator.userAgent)) {
+            mobileControls.style.display = 'block';
+        }
+
+        upButton.addEventListener('touchstart', () => {
+            keys.ArrowUp = true;
+            startAudio(); // Start de audio bij interactie
+        });
+        upButton.addEventListener('touchend', () => {
+            keys.ArrowUp = false;
+        });
+
+        leftButton.addEventListener('touchstart', () => {
+            keys.ArrowLeft = true;
+            startAudio(); // Start de audio bij interactie
+        });
+        leftButton.addEventListener('touchend', () => {
+            keys.ArrowLeft = false;
+        });
+
+        rightButton.addEventListener('touchstart', () => {
+            keys.ArrowRight = true;
+            startAudio(); // Start de audio bij interactie
+        });
+        rightButton.addEventListener('touchend', () => {
+            keys.ArrowRight = false;
+        });
+
+        // Functie om de audio te starten
+        function startAudio() {
+            const audio = document.getElementById('background-audio');
+            if (audio.muted) {
+                audio.muted = false;
+                audio.play().catch(error => {
+                    console.error('Audio afspelen mislukt:', error);
+                });
+            }
+        }
+
+        function updateGorilla() {
+            // Beweging omhoog/omlaag
+            if (keys.ArrowUp) {
+                gorilla.velocity = gorilla.lift;
+            }
+            if (keys.ArrowDown) {
+                gorilla.velocity = -gorilla.lift;
+            }
+
+            // Beweging links/rechts
+            if (keys.ArrowLeft) {
+                gorilla.x -= gorilla.speed;
+            }
+            if (keys.ArrowRight) {
+                gorilla.x += gorilla.speed;
+            }
+
+            // Zwaartekracht toepassen
+            gorilla.velocity += gorilla.gravity;
+            gorilla.y += gorilla.velocity;
+
+            // Controleer of de gorilla de randen van het scherm raakt
+            if (gorilla.y + gorilla.height > canvas.height || gorilla.y < 0) {
+                gameOver();
+            }
+            if (gorilla.x < 0) gorilla.x = 0;
+            if (gorilla.x + gorilla.width > canvas.width) gorilla.x = canvas.width - gorilla.width;
+        }
+
+        function drawGorilla() {
+            ctx.drawImage(gorillaImg, gorilla.x, gorilla.y, gorilla.width, gorilla.height);
+        }
+
+        function createObstakel() {
+            obstakels.push({
+                x: canvas.width,
+                y: Math.random() * (canvas.height - 200),
+                width: 100,
+                height: 100,
+                type: 'kokosnoot'
+            });
+        }
+
+        function drawObstakels() {
+            obstakels.forEach(obstakel => {
+                ctx.drawImage(kokosnootImg, obstakel.x, obstakel.y, obstakel.width, obstakel.height);
+            });
+        }
+
+        function updateObstakels() {
+            obstakels.forEach((obstakel, index) => {
+                obstakel.x -= gorilla.speed;
+                if (obstakel.x + obstakel.width < 0) {
+                    obstakels.splice(index, 1);
+                }
+                if (skipObstacles === 0 && gorilla.x < obstakel.x + obstakel.width &&
+                    gorilla.x + gorilla.width > obstakel.x &&
+                    gorilla.y < obstakel.y + obstakel.height &&
+                    gorilla.y + gorilla.height > obstakel.y) {
+                    gameOver();
+                }
+            });
+        }
+
+        function createPowerUp() {
+            const type = Math.random() > 0.9 ? 'trosBananen' : 'banaan'; // Tros bananen zijn schaarser
+            powerUps.push({
+                x: canvas.width,
+                y: Math.random() * (canvas.height - 100),
+                width: 80,
+                height: 80,
+                type: type
+            });
+        }
+
+        function drawPowerUps() {
+            powerUps.forEach(powerUp => {
+                if (powerUp.type === 'banaan') {
+                    ctx.drawImage(banaanImg, powerUp.x, powerUp.y, powerUp.width, powerUp.height);
+                } else {
+                    ctx.drawImage(trosBananenImg, powerUp.x, powerUp.y, powerUp.width, powerUp.height);
+                }
+            });
+        }
+
+        function updatePowerUps() {
+            powerUps.forEach((powerUp, index) => {
+                powerUp.x -= gorilla.speed;
+                if (powerUp.x + powerUp.width < 0) {
+                    powerUps.splice(index, 1);
+                }
+                if (gorilla.x < powerUp.x + powerUp.width &&
+                    gorilla.x + gorilla.width > powerUp.x &&
+                    gorilla.y < powerUp.y + powerUp.height &&
+                    gorilla.y + gorilla.height > powerUp.y) {
+                    if (powerUp.type === 'banaan') {
+                        score += 1;
+                    } else if (powerUp.type === 'trosBananen') {
+                        score += 4;
+                        skipObstacles = 5; // Sla de komende 5 obstakels over
+                    }
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        function drawBorders() {
+            ctx.fillStyle = 'green';
+            ctx.fillRect(0, 0, canvas.width, 10); // Bovenkant
+            ctx.fillRect(0, canvas.height - 10, canvas.width, 10); // Onderkant
+        }
+
+        function gameOver() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+                document.getElementById('high-score').textContent = highScore;
+            }
+            resetGame();
+        }
+
+        function resetGame() {
+            gorilla.y = canvas.height / 2;
+            gorilla.velocity = 0;
+            obstakels.length = 0;
+            powerUps.length = 0;
+            score = 0;
+            skipObstacles = 0;
+            document.getElementById('score').textContent = score;
+        }
+
+        function drawScore() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('high-score').textContent = highScore;
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBorders();
+            drawGorilla();
+            updateGorilla();
+
+            if (frame % 60 === 0) { // Meer obstakels
+                createObstakel();
+            }
+            drawObstakels();
+            updateObstakels();
+
+            if (frame % 200 === 0) { // Minder power-ups
+                createPowerUp();
+            }
+            drawPowerUps();
+            updatePowerUps();
+
+            if (skipObstacles > 0) {
+                skipObstacles--;
+            }
+
+            drawScore();
+            frame++;
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start het spel pas als alle afbeeldingen zijn geladen
+        if (imagesLoaded === totalImages) {
+            gameLoop();
+        }
+    </script>
+</body>
+</html>
