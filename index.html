@@ -42,22 +42,32 @@
             object-fit: cover;
             z-index: 0;
         }
-        .mobile-controls {
+        /* Virtuele joystick */
+        .joystick-container {
             position: absolute;
             bottom: 20px;
             left: 20px;
             z-index: 2;
             display: none; /* Verborgen op desktop */
         }
-        .mobile-controls button {
-            padding: 15px;
-            font-size: 20px;
+        .joystick {
+            width: 80px;
+            height: 80px;
             background-color: rgba(0, 0, 0, 0.5);
-            color: white;
-            border: none;
             border-radius: 50%;
-            margin: 5px;
-            cursor: pointer;
+            position: relative;
+            touch-action: none;
+        }
+        .joystick::after {
+            content: '';
+            width: 40px;
+            height: 40px;
+            background-color: white;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
     </style>
 </head>
@@ -78,11 +88,9 @@
     <div class="score">Score: <span id="score">0</span></div>
     <div class="high-score">Hoogste score: <span id="high-score">0</span></div>
 
-    <!-- Mobiele controls -->
-    <div class="mobile-controls" id="mobile-controls">
-        <button id="up">⬆️</button>
-        <button id="left">⬅️</button>
-        <button id="right">➡️</button>
+    <!-- Virtuele joystick -->
+    <div class="joystick-container" id="joystick-container">
+        <div class="joystick" id="joystick"></div>
     </div>
 
     <!-- Canvas voor het spel -->
@@ -172,39 +180,67 @@
             }
         });
 
-        // Mobiele controls
-        const mobileControls = document.getElementById('mobile-controls');
-        const upButton = document.getElementById('up');
-        const leftButton = document.getElementById('left');
-        const rightButton = document.getElementById('right');
+        // Virtuele joystick
+        const joystickContainer = document.getElementById('joystick-container');
+        const joystick = document.getElementById('joystick');
 
-        // Toon mobiele controls op mobiele apparaten
+        let joystickActive = false;
+        let joystickX = 0;
+        let joystickY = 0;
+
+        // Toon joystick op mobiele apparaten
         if (/Mobi|Android/i.test(navigator.userAgent)) {
-            mobileControls.style.display = 'block';
+            joystickContainer.style.display = 'block';
         }
 
-        upButton.addEventListener('touchstart', () => {
-            keys.ArrowUp = true;
+        // Start joystick beweging
+        joystick.addEventListener('touchstart', (e) => {
+            joystickActive = true;
+            const touch = e.touches[0];
+            joystickX = touch.clientX - joystick.offsetLeft - joystick.offsetWidth / 2;
+            joystickY = touch.clientY - joystick.offsetTop - joystick.offsetHeight / 2;
             startAudio(); // Start de audio bij interactie
-        });
-        upButton.addEventListener('touchend', () => {
-            keys.ArrowUp = false;
         });
 
-        leftButton.addEventListener('touchstart', () => {
-            keys.ArrowLeft = true;
-            startAudio(); // Start de audio bij interactie
+        // Update joystick beweging
+        joystick.addEventListener('touchmove', (e) => {
+            if (joystickActive) {
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - joystick.offsetLeft - joystick.offsetWidth / 2;
+                const deltaY = touch.clientY - joystick.offsetTop - joystick.offsetHeight / 2;
+
+                // Bereken de afstand van de joystick
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                const maxDistance = 40; // Maximale afstand van de joystick
+
+                if (distance > maxDistance) {
+                    const angle = Math.atan2(deltaY, deltaX);
+                    joystickX = Math.cos(angle) * maxDistance;
+                    joystickY = Math.sin(angle) * maxDistance;
+                } else {
+                    joystickX = deltaX;
+                    joystickY = deltaY;
+                }
+
+                // Update de positie van de joystick
+                joystick.style.transform = `translate(${joystickX}px, ${joystickY}px)`;
+
+                // Update de beweging van de gorilla
+                keys.ArrowLeft = joystickX < -10;
+                keys.ArrowRight = joystickX > 10;
+                keys.ArrowUp = joystickY < -10;
+                keys.ArrowDown = joystickY > 10;
+            }
         });
-        leftButton.addEventListener('touchend', () => {
+
+        // Stop joystick beweging
+        joystick.addEventListener('touchend', () => {
+            joystickActive = false;
+            joystick.style.transform = 'translate(0, 0)';
             keys.ArrowLeft = false;
-        });
-
-        rightButton.addEventListener('touchstart', () => {
-            keys.ArrowRight = true;
-            startAudio(); // Start de audio bij interactie
-        });
-        rightButton.addEventListener('touchend', () => {
             keys.ArrowRight = false;
+            keys.ArrowUp = false;
+            keys.ArrowDown = false;
         });
 
         // Functie om de audio te starten
@@ -333,58 +369,4 @@
         function gameOver() {
             if (score > highScore) {
                 highScore = score;
-                localStorage.setItem('highScore', highScore);
-                document.getElementById('high-score').textContent = highScore;
-            }
-            resetGame();
-        }
-
-        function resetGame() {
-            gorilla.y = canvas.height / 2;
-            gorilla.velocity = 0;
-            obstakels.length = 0;
-            powerUps.length = 0;
-            score = 0;
-            skipObstacles = 0;
-            document.getElementById('score').textContent = score;
-        }
-
-        function drawScore() {
-            document.getElementById('score').textContent = score;
-            document.getElementById('high-score').textContent = highScore;
-        }
-
-        function gameLoop() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawBorders();
-            drawGorilla();
-            updateGorilla();
-
-            if (frame % 60 === 0) { // Meer obstakels
-                createObstakel();
-            }
-            drawObstakels();
-            updateObstakels();
-
-            if (frame % 200 === 0) { // Minder power-ups
-                createPowerUp();
-            }   
-            drawPowerUps();
-            updatePowerUps();
-
-            if (skipObstacles > 0) {
-                skipObstacles--;
-            }
-
-            drawScore();
-            frame++;
-            requestAnimationFrame(gameLoop);
-        }
-
-        // Start het spel pas als alle afbeeldingen zijn geladen
-        if (imagesLoaded === totalImages) {
-            gameLoop();
-        }
-    </script>
-</body>
-</html>
+                localStorage.set
