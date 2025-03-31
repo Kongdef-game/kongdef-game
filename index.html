@@ -369,4 +369,50 @@
         function gameOver() {
             if (score > highScore) {
                 highScore = score;
-                localStorage.set
+                localStorage.setItem('highScore', highScore);
+            }
+            // Reset het spel
+            score = 0;
+            skipObstacles = 0;
+            obstakels.length = 0;
+            powerUps.length = 0;
+            gorilla.y = canvas.height / 2;
+            gorilla.velocity = 0;
+        }
+
+        function updateScore() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('high-score').textContent = highScore;
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            updateGorilla();
+            drawGorilla();
+
+            if (frame % 100 === 0) {
+                createObstakel();
+            }
+            if (frame % 200 === 0) {
+                createPowerUp();
+            }
+
+            updateObstakels();
+            drawObstakels();
+            updatePowerUps();
+            drawPowerUps();
+
+            if (skipObstacles > 0) {
+                skipObstacles--;
+            }
+
+            drawBorders();
+            updateScore();
+
+            frame++;
+            requestAnimationFrame(gameLoop);
+        }
+    </script>
+</body>
+</html>
